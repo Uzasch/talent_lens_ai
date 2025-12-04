@@ -2,7 +2,7 @@
 
 **Date:** 2025-12-04
 **Author:** Uzasch
-**Version:** 2.1
+**Version:** 2.2
 **Client:** Yoboho Company HR Department
 
 ---
@@ -15,10 +15,10 @@
 | 2 | Upload & Role Management | 6 | FR1-FR11 |
 | 3 | Phase 1: Data Extraction | 4 | FR12-FR18 |
 | 4 | Phase 2: Multi-Level Ranking | 7 | FR19-FR33 |
-| 5 | Results Dashboard | 8 | FR34-FR51 |
-| 6 | Email Candidates | 4 | FR52-FR57 |
-| 7 | Session & Pool History | 5 | FR58-FR69 |
-| **Total** | | **39 stories** | **69 FRs** |
+| 5 | Results Dashboard | 11 | FR34-FR57 |
+| 6 | Email & Scheduling | 5 | FR58-FR64 |
+| 7 | Session & Pool History | 5 | FR65-FR76 |
+| **Total** | | **43 stories** | **76 FRs** |
 
 ---
 
@@ -951,13 +951,100 @@ And handles errors gracefully
 
 ---
 
-# Epic 6: Email Candidates
+## Story 5.9: Side-by-Side Comparison Selection
 
-**Goal:** User can send interview invitations to selected candidates.
+**As a** HR professional,
+**I want** to select two candidates to compare,
+**So that** I can see them head-to-head.
 
-**User Value:** Take action directly from results!
+**Acceptance Criteria:**
 
-**FRs Covered:** FR52-FR57
+```gherkin
+Given I am on the Dashboard viewing top candidates
+When I click "Compare" button on a candidate card
+Then the card shows a "selected for comparison" state
+When I click "Compare" on a second candidate
+Then a comparison modal/view opens showing both candidates
+When I click "Compare" on a third candidate
+Then it replaces the second candidate (max 2)
+```
+
+**Technical Notes:**
+- Add "Compare" button to CandidateCard
+- Track comparison selection in state (max 2)
+- Open ComparisonModal when 2 selected
+
+**Prerequisites:** Story 5.3
+**FRs:** FR52
+
+---
+
+## Story 5.10: Comparison View Component
+
+**As a** HR professional,
+**I want** to see two candidates side-by-side with visual score comparison,
+**So that** I can easily see who is stronger in each dimension.
+
+**Acceptance Criteria:**
+
+```gherkin
+Given the comparison view is open with 2 candidates
+When I view the comparison
+Then I see both candidates' names and match scores
+And I see 5 dimension scores side-by-side with bars
+And each dimension shows which candidate wins (highlighted)
+And I see overall winner clearly indicated
+And I can close the comparison to return to dashboard
+```
+
+**Technical Notes:**
+- Create `ComparisonView.jsx` component
+- Use shadcn/ui `Dialog` for modal
+- Highlight winning scores with green
+- Show visual bars for easy comparison
+
+**Prerequisites:** Story 5.9
+**FRs:** FR53, FR54, FR57
+
+---
+
+## Story 5.11: Comparison API with AI Explanation
+
+**As a** system,
+**I want** to generate AI explanation for why one candidate beats another,
+**So that** HR understands the specific differences.
+
+**Acceptance Criteria:**
+
+```gherkin
+Given two candidate IDs are sent to POST /api/compare
+When the API processes the request
+Then it returns:
+  - Both candidates' full score data
+  - Winner for each dimension
+  - Overall winner
+  - AI explanation comparing specific factors
+  - Key differences list
+And the explanation references CRITICAL dimensions
+```
+
+**Technical Notes:**
+- Create new endpoint POST /api/compare
+- Use Gemini to generate comparison explanation
+- Return structured comparison data
+
+**Prerequisites:** Story 4.7
+**FRs:** FR55, FR56
+
+---
+
+# Epic 6: Email & Scheduling
+
+**Goal:** User can send interview invitations with schedule slots to selected candidates.
+
+**User Value:** Take action and schedule interviews directly from results!
+
+**FRs Covered:** FR58-FR64
 
 ---
 
@@ -973,7 +1060,8 @@ And handles errors gracefully
 Given Gmail credentials are configured in .env
 When I call the email service
 Then email is sent via Gmail SMTP
-And email has proper subject line
+And email has proper subject line with job title
+And email body includes company context and interview slots
 And success/failure status is returned
 ```
 
@@ -981,92 +1069,135 @@ And success/failure status is returned
 - Create `services/email_service.py`
 - Use `smtplib` with Gmail SMTP
 - Use App Password for Gmail
+- Support template variables: {name}, {job_title}, {slots}
 
 **Prerequisites:** Story 1.2
-**FRs:** FR55
+**FRs:** FR62
 
 ---
 
-## Story 6.2: Email Selection and Confirmation Modal
+## Story 6.2: Email Selection UI
 
 **As a** HR professional,
-**I want** to select candidates and preview before sending,
-**So that** I control who receives emails.
+**I want** to select which candidates to email,
+**So that** I control who receives interview invitations.
 
 **Acceptance Criteria:**
 
 ```gherkin
-Given I am on the Dashboard
-When I check candidates' checkboxes
-And click "Email Selected" button
-Then a modal appears showing:
-  - Selected recipients (names and emails)
-  - Editable message template with {name}, {job_title} placeholders
+Given I am on the Dashboard viewing top candidates
+When I view candidate cards
+Then each card has a checkbox for email selection
+When I check multiple checkboxes
+Then the "Email Selected" button shows count (e.g., "Email 3 Selected")
+When no candidates are selected
+Then the button is disabled
+```
+
+**Technical Notes:**
+- Track selected candidates in state (array of IDs)
+- Show selection count on button
+- Limit selection to candidates with valid emails
+
+**Prerequisites:** Story 5.3
+**FRs:** FR58
+
+---
+
+## Story 6.3: Interview Slot Management
+
+**As a** HR professional,
+**I want** to add interview time slots for candidates to choose from,
+**So that** I can offer flexible scheduling options.
+
+**Acceptance Criteria:**
+
+```gherkin
+Given the email modal is open
+When I view the scheduling section
+Then I see "Add Interview Slot" button
+When I click "Add Interview Slot"
+Then a date picker and time picker appear
+And I can add multiple slots (e.g., 3-5 options)
+When I add a slot
+Then it appears in a list with remove button
+And slots are sorted by date/time
+When I remove a slot
+Then it's removed from the list
+```
+
+**Technical Notes:**
+- Use shadcn/ui `DatePicker` and `TimePicker` (or input type="time")
+- Store slots as array: [{date, time}]
+- Validate slots are in the future
+- Format nicely: "Dec 6, 2025 at 10:00 AM"
+
+**Prerequisites:** Story 6.2
+**FRs:** FR59, FR60
+
+---
+
+## Story 6.4: Email Confirmation Modal
+
+**As a** HR professional,
+**I want** to preview and customize the email before sending,
+**So that** I ensure the message is appropriate.
+
+**Acceptance Criteria:**
+
+```gherkin
+Given I have selected candidates and added interview slots
+When I view the email modal
+Then I see:
+  - List of selected recipients (names and emails)
+  - Interview slots formatted nicely
+  - Editable message template with placeholders:
+    {name}, {job_title}, {company}, {slots}
+  - Preview of how email will look
   - Cancel and Send buttons
+When I edit the message
+Then changes are reflected in preview
 ```
 
 **Technical Notes:**
 - Use shadcn/ui `Dialog` component
-- Track selected candidates in state
-- Default message template included
+- Default template includes greeting, job context, slots list, CTA
+- Real-time preview updates as user types
+- Slots auto-formatted as bullet list in {slots} placeholder
 
-**Prerequisites:** Story 5.3
-**FRs:** FR52, FR54, FR57
+**Prerequisites:** Story 6.3
+**FRs:** FR61, FR64
 
 ---
 
-## Story 6.3: Send Emails API
+## Story 6.5: Send Emails API with Slots
 
 **As a** frontend,
-**I want** to call POST /api/send-emails,
-**So that** emails are sent to selected candidates.
+**I want** to call POST /api/send-emails with interview slots,
+**So that** candidates receive scheduling options.
 
 **Acceptance Criteria:**
 
 ```gherkin
 Given I click "Send Emails" in the modal
-When the API is called
+When the API is called with candidate_emails, interview_slots, and message
 Then the backend:
   - Personalizes message for each candidate
+  - Formats interview slots as readable list
   - Sends email to each address
-  - Returns status for each
-And response includes sent/failed counts
+  - Returns status for each recipient
+And response includes sent/failed counts per email
+And errors don't stop other emails from sending
 ```
 
 **Technical Notes:**
-- Replace placeholders in message
+- Accept: {session_id, candidate_emails, interview_slots[], message}
+- Replace {slots} with formatted slot list
 - Continue sending even if some fail
-- Return detailed results
+- Return: {success: true, results: [{email, sent: bool, error?}]}
 
-**Prerequisites:** Story 6.1
-**FRs:** FR53
-
----
-
-## Story 6.4: Email Status Feedback
-
-**As a** HR professional,
-**I want** to see the result of sending emails,
-**So that** I know if it worked.
-
-**Acceptance Criteria:**
-
-```gherkin
-Given emails are sent
-When successful
-Then success toast appears
-When some fail
-Then warning toast shows count
-When all fail
-Then error toast with retry option
-```
-
-**Technical Notes:**
-- Use shadcn/ui `Toast`
-- Disable button during send
-
-**Prerequisites:** Story 6.2, Story 6.3
-**FRs:** FR56
+**Prerequisites:** Story 6.1, Story 6.4
+**FRs:** FR63
 
 ---
 
@@ -1076,7 +1207,7 @@ Then error toast with retry option
 
 **User Value:** Don't lose work - manage hiring pipeline!
 
-**FRs Covered:** FR58-FR69
+**FRs Covered:** FR65-FR76
 
 ---
 
@@ -1101,7 +1232,7 @@ And all candidates remain in pool for future sessions
 - Session captures snapshot of pool state
 
 **Prerequisites:** Story 4.7
-**FRs:** FR58, FR64, FR65, FR66, FR67, FR68, FR69
+**FRs:** FR65, FR71, FR72, FR73, FR74, FR75, FR76
 
 ---
 
@@ -1129,7 +1260,7 @@ And role pools show: title, total candidates, last analyzed
 - Format dates nicely
 
 **Prerequisites:** Story 1.5
-**FRs:** FR59
+**FRs:** FR66
 
 ---
 
@@ -1160,7 +1291,7 @@ And results sorted by date descending
 - Include threshold and priority data
 
 **Prerequisites:** Story 1.3
-**FRs:** FR59
+**FRs:** FR66
 
 ---
 
@@ -1185,7 +1316,7 @@ And I can see candidates from all sessions
 - Show in table or card grid
 
 **Prerequisites:** Story 7.2
-**FRs:** FR61
+**FRs:** FR68, FR69, FR70
 
 ---
 
@@ -1210,7 +1341,7 @@ And all data is restored (stats, top candidates, explanations)
 - Dashboard handles loading by sessionId
 
 **Prerequisites:** Story 7.2, Story 5.8
-**FRs:** FR60
+**FRs:** FR67
 
 ---
 
@@ -1269,26 +1400,33 @@ And all data is restored (stats, top candidates, explanations)
 | FR49 | Why not others | 5 | 5.7 |
 | FR50 | Eliminated section | 5 | 5.6 |
 | FR51 | Pool context in explanations | 5 | 5.7 |
-| FR52 | Candidate selection | 6 | 6.2 |
-| FR53 | Send emails | 6 | 6.3 |
-| FR54 | Confirmation modal | 6 | 6.2 |
-| FR55 | Email content | 6 | 6.1 |
-| FR56 | Send status | 6 | 6.4 |
-| FR57 | Custom message | 6 | 6.2 |
-| FR58 | Save sessions | 7 | 7.1 |
-| FR59 | View session list | 7 | 7.2, 7.3 |
-| FR60 | View past dashboard | 7 | 7.5 |
-| FR61 | View role pool | 7 | 7.4 |
-| FR62 | Store roles | 7 | 7.1 |
-| FR63 | Store candidates per role | 7 | 7.1 |
-| FR64 | Store job descriptions | 7 | 7.1 |
-| FR65 | Store thresholds config | 7 | 7.1 |
-| FR66 | Store inferred priorities | 7 | 7.1 |
-| FR67 | Store analysis results | 7 | 7.1 |
-| FR68 | Store resume text | 7 | 7.1 |
-| FR69 | Store PDFs | 7 | 7.1 |
+| FR52 | Select 2 candidates to compare | 5 | 5.9 |
+| FR53 | Side-by-side score comparison | 5 | 5.10 |
+| FR54 | Highlight dimension winner | 5 | 5.10 |
+| FR55 | AI comparison explanation | 5 | 5.11 |
+| FR56 | Specific factor comparison | 5 | 5.11 |
+| FR57 | Close comparison view | 5 | 5.10 |
+| FR58 | Select candidates to email | 6 | 6.2 |
+| FR59 | Add interview time slots | 6 | 6.3 |
+| FR60 | Add multiple slots | 6 | 6.3 |
+| FR61 | Email confirmation modal | 6 | 6.4 |
+| FR62 | Email with job context and slots | 6 | 6.1 |
+| FR63 | Email send status per recipient | 6 | 6.5 |
+| FR64 | Custom email message | 6 | 6.4 |
+| FR65 | Save sessions | 7 | 7.1 |
+| FR66 | View session list | 7 | 7.2, 7.3 |
+| FR67 | View past dashboard | 7 | 7.5 |
+| FR68 | View role pool | 7 | 7.4 |
+| FR69 | Store roles | 7 | 7.4 |
+| FR70 | Store candidates per role | 7 | 7.4 |
+| FR71 | Store job descriptions | 7 | 7.1 |
+| FR72 | Store thresholds config | 7 | 7.1 |
+| FR73 | Store inferred priorities | 7 | 7.1 |
+| FR74 | Store analysis results | 7 | 7.1 |
+| FR75 | Store resume text | 7 | 7.1 |
+| FR76 | Store PDFs | 7 | 7.1 |
 
-**All 69 FRs covered by 39 stories**
+**All 76 FRs covered by 43 stories**
 
 ---
 

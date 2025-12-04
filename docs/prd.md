@@ -329,40 +329,52 @@ If this project grows beyond college:
 
 ---
 
-### Email & Communication
+### Side-by-Side Comparison
 
-- **FR52:** User can select which candidates to email (checkbox on cards)
-- **FR53:** User can send interview invitation emails to selected candidates with one click
-- **FR54:** System displays email confirmation modal before sending
-- **FR55:** Email includes job title, company context, and interview invitation message
-- **FR56:** System displays success/failure status for each email sent
-- **FR57:** User can customize email message before sending
+- **FR52:** User can select any 2 candidates from top 6 to compare side-by-side
+- **FR53:** Comparison view shows both candidates' scores on all 5 dimensions visually
+- **FR54:** Comparison view highlights which candidate is stronger in each dimension
+- **FR55:** Comparison view shows Gemini's explanation of WHY one candidate ranks higher
+- **FR56:** Comparison explains specific factors: "Rahul's 5yr Google exp > Sara's 3yr startup exp"
+- **FR57:** User can close comparison and return to dashboard
+
+---
+
+### Email & Scheduling
+
+- **FR58:** User can select which candidates to email (checkbox on cards)
+- **FR59:** User can add interview time slots (date + time) in the email modal
+- **FR60:** User can add multiple slots for candidates to choose from
+- **FR61:** System displays email confirmation modal with slots and message preview
+- **FR62:** Email includes job title, company context, and available interview slots
+- **FR63:** System displays success/failure status for each email sent
+- **FR64:** User can customize email message before sending
 
 ---
 
 ### Session History
 
-- **FR58:** System saves each analysis session (role, job description, thresholds, results, timestamp)
-- **FR59:** User can view list of past sessions with role title, date, and candidate count
-- **FR60:** User can click on a past session to view the saved dashboard
-- **FR61:** User can view all candidates in a role's pool (across all sessions)
+- **FR65:** System saves each analysis session (role, job description, thresholds, results, timestamp)
+- **FR66:** User can view list of past sessions with role title, date, and candidate count
+- **FR67:** User can click on a past session to view the saved dashboard
+- **FR68:** User can view all candidates in a role's pool (across all sessions)
 
 ---
 
 ### Data Management
 
-- **FR62:** System stores roles with normalized titles in database
-- **FR63:** System stores candidates persistently per role (pool)
-- **FR64:** System stores job descriptions per session
-- **FR65:** System stores threshold configuration per session
-- **FR66:** System stores inferred priorities per session
-- **FR67:** System stores candidate analysis results and scores
-- **FR68:** System stores extracted resume text for reference
-- **FR69:** Uploaded PDF files are stored in local filesystem
+- **FR69:** System stores roles with normalized titles in database
+- **FR70:** System stores candidates persistently per role (pool)
+- **FR71:** System stores job descriptions per session
+- **FR72:** System stores threshold configuration per session
+- **FR73:** System stores inferred priorities per session
+- **FR74:** System stores candidate analysis results and scores
+- **FR75:** System stores extracted resume text for reference
+- **FR76:** Uploaded PDF files are stored in local filesystem
 
 ---
 
-**Total: 69 Functional Requirements**
+**Total: 76 Functional Requirements**
 
 ---
 
@@ -443,9 +455,9 @@ If this project grows beyond college:
 | **Client** | Yoboho Company HR Department |
 | **Type** | Web Application (React SPA + Flask API) |
 | **Core Value** | Comparative AI ranking - compares candidates to entire pool |
-| **Key Innovations** | Multi-Level Ranking (Priority + Thresholds + Weights + Tie-breaker) |
+| **Key Innovations** | Multi-Level Ranking + Side-by-Side Comparison + Interview Scheduling |
 | **Screens** | 3 (Upload → Dashboard → History) |
-| **Functional Requirements** | 69 |
+| **Functional Requirements** | 76 |
 | **Tech Stack** | React, Tailwind, shadcn/ui, Recharts, Flask, SQLite, Gemini API, PyMuPDF, spaCy, Gmail SMTP |
 
 ### Multi-Level Ranking System
@@ -457,8 +469,15 @@ If this project grows beyond college:
 | **Level 3: Weighted Scoring** | Apply weights → calculate overall match % |
 | **Level 4: Tie-Breaker** | For similar scores → explain subtle differences |
 
+### Additional Key Features
+
+| Feature | What It Does |
+|---------|--------------|
+| **Side-by-Side Comparison** | Compare any 2 candidates with visual score comparison + AI explanation |
+| **Interview Scheduling** | Add date/time slots in email for candidates to choose from |
+
 **The One-Liner:**
-An AI-powered resume shortlister that understands what the job REALLY needs, eliminates unqualified candidates, and ranks the rest with transparent, pool-relative reasoning.
+An AI-powered resume shortlister that understands what the job REALLY needs, compares candidates head-to-head, and schedules interviews with top picks.
 
 ---
 
@@ -466,4 +485,4 @@ _This PRD captures the essence of TalentLens AI - intelligent multi-level rankin
 
 _Created through collaborative discovery between Uzasch and AI facilitator._
 _Generated: 2025-12-04_
-_Version: 2.1_
+_Version: 2.2_

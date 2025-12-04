@@ -697,15 +697,83 @@ Get a specific session's full results.
 
 **Response:** Same structure as POST /api/analyze response.
 
+#### POST /api/compare
+Compare two candidates side-by-side with AI explanation.
+
+**Request:**
+```json
+{
+  "session_id": "uuid-string",
+  "candidate_id_1": "uuid-string",
+  "candidate_id_2": "uuid-string"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "comparison": {
+    "candidate_1": {
+      "id": "uuid-string",
+      "name": "Rahul Sharma",
+      "rank": 1,
+      "match_score": 89,
+      "scores": {
+        "experience": 95,
+        "skills": 88,
+        "projects": 92,
+        "positions": 85,
+        "education": 70
+      }
+    },
+    "candidate_2": {
+      "id": "uuid-string",
+      "name": "Sara Ahmed",
+      "rank": 2,
+      "match_score": 88,
+      "scores": {
+        "experience": 78,
+        "skills": 95,
+        "projects": 90,
+        "positions": 82,
+        "education": 75
+      }
+    },
+    "dimension_winners": {
+      "experience": "candidate_1",
+      "skills": "candidate_2",
+      "projects": "candidate_1",
+      "positions": "candidate_1",
+      "education": "candidate_2"
+    },
+    "overall_winner": "candidate_1",
+    "explanation": "Rahul ranks higher because Experience is CRITICAL for this Senior role, and he scores 95% vs Sara's 78%. Although Sara has better Skills (95% vs 88%), the JD emphasizes '5+ years in enterprise environment' which Rahul's Google experience directly matches. Rahul also has stronger Projects (92% vs 90%) with production-scale applications serving 100K users.",
+    "key_differences": [
+      "Experience: Rahul's 5yr at Google vs Sara's 3yr at startup",
+      "Skills: Sara's broader tech stack vs Rahul's deeper Python expertise",
+      "Projects: Rahul's 100K user scale vs Sara's 50K user scale"
+    ]
+  }
+}
+```
+
+---
+
 #### POST /api/send-emails
-Send interview invitations to selected candidates.
+Send interview invitations with schedule slots to selected candidates.
 
 **Request:**
 ```json
 {
   "session_id": "uuid-string",
   "candidate_emails": ["sara@email.com", "ali@email.com"],
-  "message": "Dear {name},\n\nWe would like to invite you for an interview..."
+  "interview_slots": [
+    {"date": "2025-12-06", "time": "10:00 AM"},
+    {"date": "2025-12-06", "time": "2:00 PM"},
+    {"date": "2025-12-07", "time": "11:00 AM"}
+  ],
+  "message": "Dear {name},\n\nWe would like to invite you for an interview for the {job_title} position.\n\nPlease choose from the available slots:\n{slots}\n\nReply with your preferred time."
 }
 ```
 
@@ -721,6 +789,10 @@ Send interview invitations to selected candidates.
   ]
 }
 ```
+
+**Note:** The `{slots}` placeholder is automatically replaced with formatted interview slots.
+
+---
 
 #### DELETE /api/candidates/:id
 Remove a candidate from the pool (e.g., hired, withdrew).
