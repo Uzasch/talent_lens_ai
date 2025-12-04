@@ -1,8 +1,9 @@
-# Resume Shortlister - Architecture Document
+# TalentLens AI - Architecture Document
 
-**Date:** 2025-11-30
+**Date:** 2025-12-04
 **Author:** Uzasch
-**Version:** 1.0
+**Version:** 2.0
+**Client:** Yoboho Company HR Department
 
 ---
 
@@ -10,7 +11,369 @@
 
 A simple two-tier web application architecture: **React SPA frontend** communicating with a **Flask REST API backend**. Data persists in SQLite. The Gemini API handles AI analysis, and Gmail SMTP handles email delivery.
 
-This architecture prioritizes **simplicity** and **beginner-friendliness** - perfect for a college project that needs to work reliably for demos.
+### Key Architecture Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Two-Phase Analysis** | Phase 1: Extract data locally. Phase 2: Comparative analysis via Gemini |
+| **Role-Based Candidate Pools** | All candidates for a role are compared together (current + past sessions) |
+| **Gemini Only for AI Tasks** | PDF parsing, regex extraction done locally. API only for intelligence |
+| **Comparative Ranking** | Candidates ranked relative to each other, not scored in isolation |
+
+---
+
+## AI Strategy: What Uses Gemini vs Local Processing
+
+### Local Processing (No API)
+
+| Task | Tool | Why Local |
+|------|------|-----------|
+| PDF text extraction | PyMuPDF | Just reading file, no intelligence needed |
+| Name extraction | Regex + spaCy NER | Pattern matching |
+| Email extraction | Regex | Simple pattern: `[\w.-]+@[\w.-]+` |
+| Phone extraction | Regex | Pattern matching |
+| Database storage | SQLite | Storage, no AI |
+| Email sending | Gmail SMTP | Not AI related |
+
+### Gemini API (Intelligence Required)
+
+| Task | Why API Needed |
+|------|----------------|
+| **Skill extraction** | Understanding context ("React" vs "reactive") |
+| **Experience parsing** | Understanding "2+ years" vs "led team for 3 years" |
+| **Project quality assessment** | Judging impact, not just counting |
+| **Comparative ranking** | "Who is BEST among all candidates?" |
+| **Score generation** | Context-aware scoring relative to pool |
+| **Summary generation** | Natural language bullet points |
+| **WHY explanations** | Reasoning about selection |
+
+---
+
+## Two-Phase Analysis Architecture
+
+### Phase 1: Individual Data Extraction
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ PHASE 1: Extract Data (Per Resume)                      │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  PDF File                                                │
+│      │                                                   │
+│      ▼                                                   │
+│  PyMuPDF ──► Raw Text                                   │
+│      │                                                   │
+│      ▼                                                   │
+│  Local Extraction (Regex/spaCy)                         │
+│      ├── Name (regex patterns)                          │
+│      ├── Email (regex)                                  │
+│      └── Phone (regex)                                  │
+│      │                                                   │
+│      ▼                                                   │
+│  Gemini API (Individual)                                │
+│      ├── Extract skills                                 │
+│      ├── Parse experience details                       │
+│      ├── Parse education details                        │
+│      └── Extract project details                        │
+│      │                                                   │
+│      ▼                                                   │
+│  Store in SQLite (candidates table)                     │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Phase 2: Comparative Analysis (Role-Based Pool)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ PHASE 2: Comparative Ranking (All Candidates Together)  │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  Fetch ALL candidates for this role from DB             │
+│  (Current batch + All past sessions)                    │
+│      │                                                   │
+│      ▼                                                   │
+│  Build Candidate Pool Summary                           │
+│  ┌────────────────────────────────────────────┐         │
+│  │ Role: "Python Developer"                   │         │
+│  │ Total Candidates: 45                       │         │
+│  │                                            │         │
+│  │ Candidate 1: Ali                           │         │
+│  │   - 2yr exp, 3 projects, Junior→Mid       │         │
+│  │   - Skills: Python, Django, PostgreSQL    │         │
+│  │                                            │         │
+│  │ Candidate 2: Sara                          │         │
+│  │   - 4yr exp, 5 projects, Mid→Senior       │         │
+│  │   - Skills: Python, FastAPI, AWS          │         │
+│  │                                            │         │
+│  │ ... (all 45 candidates)                   │         │
+│  └────────────────────────────────────────────┘         │
+│      │                                                   │
+│      ▼                                                   │
+│  Send to Gemini (Single Prompt with Full Context)       │
+│  "Given this job description and ALL 45 candidates:     │
+│   - Rank them considering experience, projects,         │
+│     positions, skills, education                        │
+│   - Score relative to the candidate pool                │
+│   - Explain WHY top candidates are best                 │
+│   - Explain WHY others weren't selected"                │
+│      │                                                   │
+│      ▼                                                   │
+│  Gemini Returns: Rankings + Scores + Explanations       │
+│      │                                                   │
+│      ▼                                                   │
+│  Update candidates in DB with ranks/scores              │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Role-Based Candidate Pool System
+
+### Concept
+
+Instead of analyzing candidates per session, we maintain a **persistent pool per role**:
+
+```
+Role: "Python Developer"
+├── Session 1 (Nov 28): 20 resumes uploaded
+├── Session 2 (Nov 30): 15 resumes uploaded
+├── Session 3 (Dec 02): 10 resumes uploaded
+└── Total Pool: 45 candidates
+
+When Session 3 is analyzed:
+  → Gemini sees ALL 45 candidates
+  → Ranks them against each other
+  → New candidates compared fairly to existing pool
+```
+
+### Benefits
+
+| Benefit | Description |
+|---------|-------------|
+| **Fair Comparison** | New candidate with 3yr exp ranked against all others with similar exp |
+| **AI-Fluff Detection** | If everyone claims "expert", Gemini finds who actually proves it |
+| **Pool-Relative Scoring** | 80% in strong pool ≠ 80% in weak pool |
+| **Historical Context** | "This is the best Python candidate we've seen across 3 hiring rounds" |
+
+### Role Normalization
+
+To avoid duplicate pools for similar roles:
+
+| Input | Normalized Role |
+|-------|-----------------|
+| "Python Dev" | "Python Developer" |
+| "Python Developer" | "Python Developer" |
+| "Sr. Python Developer" | "Senior Python Developer" |
+| "python developer" | "Python Developer" |
+
+---
+
+## Multi-Level Ranking System
+
+The ranking system uses 4 levels to determine the best candidates:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Level 1: Job-Inferred Priority                          │
+│          Gemini reads JD → determines what matters most │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│ Level 2: Minimum Thresholds (Optional)                  │
+│          Eliminate candidates below minimum scores      │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│ Level 3: Weighted Scoring                               │
+│          Apply weights to calculate overall match %     │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│ Level 4: Tie-Breaker Logic                              │
+│          Gemini explains subtle differences             │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Level 1: Job-Inferred Priority
+
+Gemini analyzes the job description and automatically determines which dimensions are most important:
+
+| JD Contains | Gemini Infers |
+|-------------|---------------|
+| "5+ years experience", "senior" | Experience = CRITICAL |
+| "React, Node.js, TypeScript" | Skills = CRITICAL |
+| "team lead", "manage developers" | Positions = IMPORTANT |
+| "built scalable systems" | Projects = IMPORTANT |
+| "CS degree preferred" | Education = NICE-TO-HAVE |
+| No mention of education | Education = LOW PRIORITY |
+
+**Output Format:**
+```json
+{
+  "inferred_priorities": {
+    "experience": "CRITICAL",
+    "skills": "CRITICAL",
+    "positions": "IMPORTANT",
+    "projects": "IMPORTANT",
+    "education": "NICE_TO_HAVE"
+  },
+  "reasoning": "JD emphasizes 5+ years and specific tech stack, mentions team lead. No education requirements stated."
+}
+```
+
+---
+
+### Level 2: Minimum Thresholds (Optional)
+
+HR can set minimum scores for any dimension. Candidates below threshold are eliminated.
+
+| Dimension | Threshold | Effect |
+|-----------|-----------|--------|
+| Experience | ≥ 60% | Below = eliminated from ranking |
+| Skills | ≥ 50% | Below = eliminated from ranking |
+| Projects | ≥ 40% | Below = eliminated from ranking |
+| Positions | No minimum | Just contributes to score |
+| Education | No minimum | Just contributes to score |
+
+**Example:**
+```
+Pool: 45 candidates
+After thresholds: 32 candidates remain
+Eliminated: 13 candidates
+  - 8 candidates: Experience < 60%
+  - 5 candidates: Skills < 50%
+```
+
+**Configuration:**
+```json
+{
+  "thresholds": {
+    "experience": { "enabled": true, "minimum": 60 },
+    "skills": { "enabled": true, "minimum": 50 },
+    "projects": { "enabled": false },
+    "positions": { "enabled": false },
+    "education": { "enabled": false }
+  }
+}
+```
+
+---
+
+### Level 3: Weighted Scoring
+
+After filtering, apply weights to remaining candidates:
+
+| Factor | Default Weight | What Gemini Evaluates |
+|--------|----------------|----------------------|
+| **Experience** | 20% | Years, relevance, progression, responsibilities |
+| **Projects** | 20% | Quality, impact, scale, relevance to job |
+| **Positions** | 20% | Career growth (Junior→Mid→Senior), leadership |
+| **Skills** | 20% | Match with job requirements, depth vs breadth |
+| **Education** | 20% | Degree relevance, institution, certifications |
+
+**Custom Weights Example:**
+```json
+{
+  "weights": {
+    "experience": 30,
+    "projects": 25,
+    "skills": 20,
+    "positions": 15,
+    "education": 10
+  }
+}
+```
+
+**Score Calculation:**
+```
+Overall Match = (Experience × 0.30) + (Projects × 0.25) +
+                (Skills × 0.20) + (Positions × 0.15) +
+                (Education × 0.10)
+```
+
+---
+
+### Level 4: Tie-Breaker Logic
+
+When candidates have similar overall scores (within 5%), Gemini applies tie-breaker logic:
+
+| Tie-Breaker Factor | How It's Used |
+|--------------------|---------------|
+| **CRITICAL dimension scores** | Higher score in CRITICAL dimension wins |
+| **Project impact/scale** | 10K users > 100 users |
+| **Career progression speed** | Junior→Senior in 3yr > 5yr |
+| **Leadership indicators** | Led team > worked in team |
+| **Recency of experience** | Recent experience > old experience |
+| **Company reputation** | Known companies may indicate quality |
+
+**Example:**
+```
+Ali: 85% overall
+Sara: 84% overall
+Difference: 1% (within tie-breaker range)
+
+Tie-breaker decision:
+"Ali ranks higher because Experience is CRITICAL for this
+Senior role, and Ali scores 90% vs Sara's 70% in Experience.
+Although Sara has better Skills (95% vs 60%), the JD
+emphasizes '5+ years in enterprise environment' which
+Ali's Google experience directly matches."
+```
+
+---
+
+## Scoring Factors Detail
+
+| Factor | What Gemini Looks For | High Score Indicators |
+|--------|----------------------|----------------------|
+| **Experience** | Years, relevance, depth | 5+ years in relevant field, progressive responsibility |
+| **Projects** | Quality over quantity | Production apps, user scale, measurable impact |
+| **Positions** | Career trajectory | Clear growth path, leadership roles, promotions |
+| **Skills** | Match + depth | Required skills present + demonstrated proficiency |
+| **Education** | Relevance | Degree in field, certifications, continuous learning |
+
+---
+
+## Token Limit Handling
+
+Gemini has token limits. For large candidate pools (100+):
+
+### Strategy: Tiered Summarization
+
+```
+If candidates > 50:
+  1. Send first 50 candidates with full details
+  2. Send remaining as compressed summaries:
+     "Candidate 51-100: Similar profiles, avg 2yr exp,
+      skills overlap with top 50, no standout factors"
+  3. Gemini ranks top 50, flags if any from 51-100 need review
+```
+
+### Alternative: Rolling Window
+
+```
+For very large pools (200+):
+  1. Pre-filter using local scoring (Sentence Transformers)
+  2. Send top 75 to Gemini for detailed comparative analysis
+  3. Store pre-filter scores for transparency
+```
+
+---
+
+## Duplicate Detection
+
+Same candidate applying multiple times:
+
+| Check | Method |
+|-------|--------|
+| Email match | Exact match on email address |
+| Name + Phone | Fuzzy match if email differs |
+
+**Behavior:** Keep latest resume, mark previous as "superseded"
 
 ---
 
@@ -51,7 +414,10 @@ python -m venv venv
 # Windows: venv\Scripts\activate
 # Mac/Linux: source venv/bin/activate
 
-pip install flask flask-cors python-dotenv google-generativeai PyMuPDF
+pip install flask flask-cors python-dotenv google-generativeai PyMuPDF spacy
+
+# Download spaCy model for NER (name extraction)
+python -m spacy download en_core_web_sm
 
 # Create directory structure
 mkdir -p data uploads
@@ -83,6 +449,7 @@ FLASK_ENV=development
 | Database | SQLite | 3.x | FR34-41 | Zero config, file-based |
 | AI Provider | Google Gemini | gemini-1.5-flash | FR8-16, FR25-28 | Free tier, good for analysis |
 | PDF Parsing | PyMuPDF (fitz) | 1.24.x | FR8 | Fast, reliable PDF extraction |
+| NER | spaCy | 3.x | Name extraction | Local, accurate |
 | Email | Gmail SMTP | - | FR29-33 | Free, simple setup |
 | HTTP Client | Axios | 1.x | All API calls | Promise-based, interceptors |
 | Routing | React Router | 6.x | Navigation | Standard React routing |
@@ -108,11 +475,13 @@ resume-shortlister/
 │   │   │   │   ├── toast.jsx
 │   │   │   │   ├── progress.jsx
 │   │   │   │   ├── badge.jsx
+│   │   │   │   ├── slider.jsx        # For weight adjustment
 │   │   │   │   └── skeleton.jsx
 │   │   │   ├── CandidateCard.jsx
 │   │   │   ├── DropZone.jsx
 │   │   │   ├── StatCard.jsx
 │   │   │   ├── ScoreBar.jsx
+│   │   │   ├── WeightConfig.jsx      # Weight preferences UI
 │   │   │   └── Navbar.jsx
 │   │   ├── pages/               # Page components
 │   │   │   ├── HomePage.jsx     # Upload screen
@@ -137,8 +506,10 @@ resume-shortlister/
 │   ├── config.py                # Configuration
 │   ├── models.py                # SQLite models/queries
 │   ├── services/
-│   │   ├── pdf_parser.py        # PDF text extraction
+│   │   ├── pdf_parser.py        # PDF text extraction (PyMuPDF)
+│   │   ├── local_extractor.py   # Regex + spaCy extraction
 │   │   ├── gemini_service.py    # Gemini API integration
+│   │   ├── pool_manager.py      # Role-based candidate pool logic
 │   │   └── email_service.py     # Gmail SMTP
 │   ├── data/
 │   │   └── app.db               # SQLite database (auto-created)
@@ -146,6 +517,12 @@ resume-shortlister/
 │   ├── requirements.txt         # Python dependencies
 │   ├── .env                     # Environment variables (gitignored)
 │   └── venv/                    # Virtual environment (gitignored)
+│
+├── docs/                        # Documentation
+│   ├── prd.md
+│   ├── architecture.md
+│   ├── epics.md
+│   └── ux-design-specification.md
 │
 ├── .gitignore
 └── README.md
@@ -157,62 +534,14 @@ resume-shortlister/
 
 | FR Category | Frontend | Backend | Database |
 |-------------|----------|---------|----------|
-| Job & Resume Input (FR1-7) | `HomePage.jsx`, `DropZone.jsx` | `app.py: /api/analyze` | - |
-| AI Analysis (FR8-16) | `DashboardPage.jsx` (loading state) | `gemini_service.py`, `pdf_parser.py` | - |
+| Job & Resume Input (FR1-7) | `HomePage.jsx`, `DropZone.jsx` | `app.py: /api/analyze` | `roles` table |
+| AI Analysis (FR8-16) | `DashboardPage.jsx` (loading state) | `gemini_service.py`, `pdf_parser.py`, `local_extractor.py`, `pool_manager.py` | `candidates` table |
 | Dashboard Overview (FR17-19) | `DashboardPage.jsx`, `StatCard.jsx` | `app.py: /api/sessions/<id>` | `sessions` table |
-| Top 6 Candidates (FR20-24) | `CandidateCard.jsx`, `ScoreBar.jsx` | Response from `/api/analyze` | `candidates` table |
-| Transparency (FR25-28) | `CandidateCard.jsx` (WHY section) | Gemini prompt engineering | - |
+| Top Candidates (FR20-24) | `CandidateCard.jsx`, `ScoreBar.jsx` | Response from `/api/analyze` | `candidates` table |
+| Transparency (FR25-28) | `CandidateCard.jsx` (WHY section) | Gemini comparative prompt | - |
 | Email (FR29-33) | `DashboardPage.jsx` (modal) | `email_service.py`, `app.py: /api/send-emails` | - |
 | Session History (FR34-37) | `HistoryPage.jsx` | `app.py: /api/sessions` | `sessions`, `candidates` tables |
 | Data Management (FR38-41) | - | `models.py` | All tables |
-
----
-
-## Technology Stack Details
-
-### Frontend Stack
-
-**React 18 + Vite**
-- Fast HMR (Hot Module Replacement)
-- ES modules for faster builds
-- Simple configuration
-
-**Tailwind CSS 3**
-- Utility-first CSS
-- Dark mode via CSS variables
-- Responsive design utilities
-
-**shadcn/ui**
-- Copy-paste components
-- Radix UI primitives (accessible)
-- Customizable via Tailwind
-
-**Recharts**
-- React-native charting
-- Responsive
-- Used for score breakdown bars
-
-### Backend Stack
-
-**Flask 3.x**
-- Lightweight Python web framework
-- Simple routing
-- Good documentation
-
-**SQLite 3**
-- Zero configuration
-- File-based database
-- Perfect for single-user apps
-
-**PyMuPDF (fitz)**
-- Fast PDF text extraction
-- Handles various PDF formats
-- Pure Python
-
-**Google Generative AI (Gemini)**
-- Free tier available
-- Good for text analysis
-- Simple Python SDK
 
 ---
 
@@ -225,15 +554,47 @@ Development: http://localhost:5000/api
 
 ### Endpoints
 
+#### POST /api/roles
+Create or get a role (for candidate pool management).
+
+**Request:**
+```json
+{
+  "title": "Python Developer",
+  "weights": {
+    "experience": 30,
+    "projects": 35,
+    "positions": 15,
+    "skills": 15,
+    "education": 5
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "role": {
+    "id": "uuid-string",
+    "title": "Python Developer",
+    "normalized_title": "python developer",
+    "total_candidates": 45,
+    "weights": { ... }
+  }
+}
+```
+
 #### POST /api/analyze
 Analyze resumes against a job description.
 
 **Request:**
 ```json
 {
-  "job_title": "Senior React Developer",
+  "role_id": "uuid-string",
   "job_description": "We are looking for...",
-  "files": [/* multipart form data - PDF files */]
+  "files": [/* multipart form data - PDF files */],
+  "weights": { /* optional, overrides role defaults */ }
 }
 ```
 
@@ -243,32 +604,70 @@ Analyze resumes against a job description.
   "success": true,
   "session_id": "uuid-string",
   "data": {
-    "job_title": "Senior React Developer",
-    "total_analyzed": 47,
+    "role": {
+      "id": "uuid-string",
+      "title": "Python Developer",
+      "total_in_pool": 45
+    },
+    "new_candidates": 10,
     "analysis_time_seconds": 45,
     "overview": {
-      "experience_range": "2-8 years",
-      "top_skills": ["React", "TypeScript", "Node.js"],
-      "average_match": 72
+      "pool_experience_range": "1-8 years",
+      "top_skills_in_pool": ["Python", "Django", "FastAPI"],
+      "average_match": 72,
+      "pool_quality": "Strong pool with 12 highly qualified candidates"
     },
     "top_candidates": [
       {
         "rank": 1,
-        "name": "Rahul Sharma",
-        "email": "rahul@email.com",
-        "match_score": 92,
+        "name": "Sara Ahmed",
+        "email": "sara@email.com",
+        "match_score": 94,
         "scores": {
           "education": 85,
           "experience": 95,
-          "projects": 90
+          "projects": 98,
+          "positions": 90,
+          "skills": 92
         },
-        "summary": ["5 years React experience", "Led team of 5", "Built apps for 50K users"],
-        "why_selected": "Best combination of leadership experience and technical depth. Only candidate with microservices experience matching the job requirements."
+        "summary": [
+          "4 years Python experience with FastAPI and AWS",
+          "Led team of 5 on ML pipeline project",
+          "Career progression from Junior to Senior in 3 years"
+        ],
+        "why_selected": "Strongest project portfolio in the pool. Only candidate with production ML experience matching the job requirements. Clear career growth trajectory.",
+        "compared_to_pool": "Outranks 44 other candidates due to superior project impact and leadership experience."
       }
-      // ... 5 more candidates
+      // ... more candidates
     ],
-    "why_not_others": "Remaining 41 candidates scored below 75% match. Common gaps: insufficient React experience, no leadership background, or missing key skills like TypeScript."
+    "why_not_others": "Remaining 39 candidates scored below 75% match. Common gaps: insufficient project scale, no leadership experience, or missing key skills like FastAPI. 5 candidates were close but lacked production deployment experience."
   }
+}
+```
+
+#### GET /api/roles/:id/candidates
+Get all candidates in a role's pool.
+
+**Response:**
+```json
+{
+  "success": true,
+  "role": {
+    "id": "uuid-string",
+    "title": "Python Developer"
+  },
+  "candidates": [
+    {
+      "id": "uuid-string",
+      "name": "Sara Ahmed",
+      "email": "sara@email.com",
+      "match_score": 94,
+      "session_id": "uuid-string",
+      "uploaded_at": "2025-12-02T10:30:00Z"
+    }
+    // ... all candidates
+  ],
+  "total": 45
 }
 ```
 
@@ -282,10 +681,12 @@ Get list of past analysis sessions.
   "sessions": [
     {
       "id": "uuid-string",
-      "job_title": "Senior React Developer",
-      "created_at": "2025-11-30T10:30:00Z",
-      "total_candidates": 47,
-      "top_match_score": 92
+      "role_id": "uuid-string",
+      "role_title": "Python Developer",
+      "created_at": "2025-12-02T10:30:00Z",
+      "candidates_added": 10,
+      "pool_size_at_analysis": 45,
+      "top_match_score": 94
     }
   ]
 }
@@ -297,13 +698,13 @@ Get a specific session's full results.
 **Response:** Same structure as POST /api/analyze response.
 
 #### POST /api/send-emails
-Send interview invitations to top candidates.
+Send interview invitations to selected candidates.
 
 **Request:**
 ```json
 {
   "session_id": "uuid-string",
-  "candidate_emails": ["rahul@email.com", "priya@email.com"],
+  "candidate_emails": ["sara@email.com", "ali@email.com"],
   "message": "Dear {name},\n\nWe would like to invite you for an interview..."
 }
 ```
@@ -312,12 +713,23 @@ Send interview invitations to top candidates.
 ```json
 {
   "success": true,
-  "sent": 6,
+  "sent": 2,
   "failed": 0,
   "results": [
-    {"email": "rahul@email.com", "status": "sent"},
-    {"email": "priya@email.com", "status": "sent"}
+    {"email": "sara@email.com", "status": "sent"},
+    {"email": "ali@email.com", "status": "sent"}
   ]
+}
+```
+
+#### DELETE /api/candidates/:id
+Remove a candidate from the pool (e.g., hired, withdrew).
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Candidate removed from pool"
 }
 ```
 
@@ -339,65 +751,261 @@ Send interview invitations to top candidates.
 ### SQLite Schema
 
 ```sql
+-- Roles table (for candidate pool grouping)
+CREATE TABLE roles (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    normalized_title TEXT NOT NULL,  -- lowercase, trimmed for matching
+    weights TEXT,  -- JSON string for scoring weights
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(normalized_title)
+);
+
 -- Sessions table
 CREATE TABLE sessions (
     id TEXT PRIMARY KEY,
-    job_title TEXT NOT NULL,
+    role_id TEXT NOT NULL,
     job_description TEXT NOT NULL,
-    total_analyzed INTEGER NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    candidates_added INTEGER NOT NULL,
+    pool_size_at_analysis INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (role_id) REFERENCES roles(id)
 );
 
--- Candidates table
+-- Candidates table (persistent pool per role)
 CREATE TABLE candidates (
     id TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL,
-    rank INTEGER,
+    role_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,  -- which session added this candidate
+
+    -- Basic info (extracted locally)
     name TEXT NOT NULL,
     email TEXT,
-    match_score INTEGER NOT NULL,
+    phone TEXT,
+    resume_text TEXT,
+
+    -- Extracted data (from Gemini Phase 1)
+    skills TEXT,           -- JSON array
+    experience_years REAL,
+    experience_details TEXT,  -- JSON: roles, companies, durations
+    education TEXT,        -- JSON: degrees, institutions
+    projects TEXT,         -- JSON: project details
+    positions TEXT,        -- JSON: position history
+
+    -- Scores (from Gemini Phase 2 comparative analysis)
+    rank INTEGER,
+    match_score INTEGER,
     education_score INTEGER,
     experience_score INTEGER,
     projects_score INTEGER,
-    summary TEXT,  -- JSON array as string
+    positions_score INTEGER,
+    skills_score INTEGER,
+
+    -- Explanations
+    summary TEXT,          -- JSON array of 3 bullet points
     why_selected TEXT,
-    resume_text TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    compared_to_pool TEXT,
+
+    -- Metadata
+    status TEXT DEFAULT 'active',  -- active, hired, withdrew, superseded
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_ranked_at TIMESTAMP,
+
+    FOREIGN KEY (role_id) REFERENCES roles(id),
     FOREIGN KEY (session_id) REFERENCES sessions(id)
 );
+
+-- Index for fast pool queries
+CREATE INDEX idx_candidates_role ON candidates(role_id, status);
+CREATE INDEX idx_candidates_email ON candidates(email);
 ```
 
 ### Data Flow
 
 ```
-User uploads PDFs
+User uploads PDFs + enters job description
         │
         ▼
-┌─────────────────┐
-│  Flask Backend  │
-│  /api/analyze   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│   PDF Parser    │ ──► Extract text from each PDF
-│   (PyMuPDF)     │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Gemini API     │ ──► Analyze in batches of 10-15
-│  (Batch Process)│ ──► Score: Education, Experience, Projects
-└────────┬────────┘ ──► Generate WHY explanations
-         │
-         ▼
-┌─────────────────┐
-│    SQLite       │ ──► Save session + candidates
-│    Database     │
-└────────┬────────┘
-         │
-         ▼
+┌─────────────────────────────────────────────────────────┐
+│  PHASE 1: Individual Extraction                         │
+├─────────────────────────────────────────────────────────┤
+│  For each PDF:                                          │
+│    1. PyMuPDF extracts text                             │
+│    2. Regex extracts: email, phone                      │
+│    3. spaCy NER extracts: name                          │
+│    4. Gemini extracts: skills, experience, projects     │
+│    5. Store in candidates table                         │
+└─────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────┐
+│  PHASE 2: Comparative Analysis                          │
+├─────────────────────────────────────────────────────────┤
+│  1. Fetch ALL candidates for this role (current + past) │
+│  2. Build candidate pool summary                        │
+│  3. Send to Gemini with job description:                │
+│     "Rank these candidates against each other"          │
+│  4. Gemini returns: ranks, scores, explanations         │
+│  5. Update candidates with ranks/scores                 │
+└─────────────────────────────────────────────────────────┘
+        │
+        ▼
    JSON Response to Frontend
+```
+
+---
+
+## Gemini Prompt Engineering
+
+### Phase 1 Prompt (Individual Extraction)
+
+```
+Extract structured data from this resume text.
+
+Resume Text:
+{resume_text}
+
+Return JSON:
+{
+  "skills": ["Python", "Django", ...],
+  "experience_years": 4.5,
+  "experience_details": [
+    {"role": "Senior Developer", "company": "TechCorp", "duration": "2 years", "highlights": ["Led team", "Built API"]}
+  ],
+  "education": [
+    {"degree": "B.Tech Computer Science", "institution": "IIT Delhi", "year": 2018}
+  ],
+  "projects": [
+    {"name": "E-commerce Platform", "description": "Built for 50K users", "technologies": ["Python", "React"], "impact": "Increased sales 30%"}
+  ],
+  "positions": [
+    {"title": "Junior Developer", "year": 2018},
+    {"title": "Mid Developer", "year": 2020},
+    {"title": "Senior Developer", "year": 2022}
+  ]
+}
+```
+
+### Phase 2 Prompt (Multi-Level Comparative Ranking)
+
+```
+You are an expert HR analyst. Analyze and rank candidates using a 4-level ranking system.
+
+=== JOB DESCRIPTION ===
+{job_description}
+
+=== LEVEL 1: INFER PRIORITY DIMENSIONS ===
+Analyze the job description and determine priority for each dimension:
+- CRITICAL: Must be strong in this area (JD explicitly requires it)
+- IMPORTANT: Valuable but not mandatory
+- NICE_TO_HAVE: Bonus points
+- LOW_PRIORITY: Not mentioned in JD
+
+=== LEVEL 2: MINIMUM THRESHOLDS ===
+{thresholds_config}
+Eliminate any candidate scoring below these minimums.
+
+=== LEVEL 3: SCORING WEIGHTS ===
+- Experience: {experience_weight}%
+- Projects: {projects_weight}%
+- Positions: {positions_weight}%
+- Skills: {skills_weight}%
+- Education: {education_weight}%
+
+=== LEVEL 4: TIE-BREAKER RULES ===
+When candidates score within 5% of each other:
+1. Higher score in CRITICAL dimensions wins
+2. Project impact/scale (10K users > 100 users)
+3. Career progression speed
+4. Leadership indicators
+5. Recency of experience
+
+=== CANDIDATE POOL ({total_candidates} candidates) ===
+{candidate_summaries}
+
+=== TASK ===
+
+STEP 1: Output your inferred priorities
+{
+  "inferred_priorities": {
+    "experience": "CRITICAL|IMPORTANT|NICE_TO_HAVE|LOW_PRIORITY",
+    "skills": "...",
+    "projects": "...",
+    "positions": "...",
+    "education": "..."
+  },
+  "priority_reasoning": "Why you assigned these priorities based on JD"
+}
+
+STEP 2: Apply thresholds and report eliminations
+{
+  "eliminated_candidates": [
+    {"id": "...", "reason": "Experience score 45% < minimum 60%"}
+  ],
+  "remaining_count": 32
+}
+
+STEP 3: Score and rank remaining candidates
+For each candidate, score RELATIVE to the pool (not in isolation).
+A score of 80% means "better than 80% of this pool in this dimension".
+
+STEP 4: Apply tie-breaker for similar scores
+When two candidates are within 5%, explain why one ranks higher.
+
+STEP 5: Return final rankings
+{
+  "inferred_priorities": { ... },
+  "priority_reasoning": "...",
+  "eliminated": {
+    "count": 13,
+    "reasons": {
+      "experience_below_threshold": 8,
+      "skills_below_threshold": 5
+    }
+  },
+  "rankings": [
+    {
+      "candidate_id": "...",
+      "rank": 1,
+      "match_score": 94,
+      "scores": {
+        "experience": 95,
+        "projects": 98,
+        "positions": 90,
+        "skills": 92,
+        "education": 85
+      },
+      "summary": [
+        "5 years Python at Google with microservices",
+        "Led team of 5 on ML pipeline serving 100K users",
+        "Promoted Junior→Senior in 3 years"
+      ],
+      "why_selected": "Highest Experience score (CRITICAL for this Senior role). Only candidate with enterprise-scale production experience matching JD requirements.",
+      "compared_to_pool": "Outranks 44 candidates. Top 5% in Experience, top 10% in Projects. Leadership experience exceeds 90% of pool.",
+      "tie_breaker_applied": false
+    },
+    {
+      "candidate_id": "...",
+      "rank": 2,
+      "match_score": 93,
+      "scores": { ... },
+      "summary": [ ... ],
+      "why_selected": "...",
+      "compared_to_pool": "...",
+      "tie_breaker_applied": true,
+      "tie_breaker_reason": "Scored 93% vs Candidate C's 92%. Won tie-breaker because Skills (CRITICAL) score of 95% exceeds C's 88%, and project served 50K users vs C's 5K."
+    }
+  ],
+  "why_not_others": "32 candidates ranked. 13 eliminated by thresholds (8 for Experience < 60%, 5 for Skills < 50%). Remaining 26 below top 6 due to: insufficient project scale (15), no leadership experience (8), skills gaps in required tech stack (3)."
+}
+
+=== IMPORTANT RULES ===
+- Score candidates RELATIVE to each other, not in isolation
+- Consider quality over quantity (1 impactful project > 5 trivial ones)
+- Account for AI-polished resumes - look for concrete evidence
+- CRITICAL dimensions should heavily influence ranking
+- Always explain tie-breaker decisions
+- Include pool comparison percentages ("top 5% in Experience")
 ```
 
 ---
@@ -487,6 +1095,7 @@ def handle_error(error):
 
 - Button shows spinner when submitting
 - Full-screen loader with progress for analysis
+- Phase indicators: "Extracting data..." → "Analyzing candidates..."
 - Skeleton loaders for data fetching
 - Toast notifications for success/error
 
@@ -496,7 +1105,7 @@ def handle_error(error):
 
 ### Date/Time
 - Store as ISO 8601 strings in database
-- Display in user-friendly format: "Nov 30, 2025"
+- Display in user-friendly format: "Dec 4, 2025"
 - Use `date-fns` or native `Intl.DateTimeFormat` for formatting
 
 ### Colors (CSS Variables)
@@ -514,7 +1123,8 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-logger.info(f"Analyzing {len(files)} resumes for job: {job_title}")
+logger.info(f"Phase 1: Extracting data from {len(files)} resumes")
+logger.info(f"Phase 2: Comparative analysis for role '{role_title}' with {pool_size} candidates")
 logger.error(f"Gemini API error: {str(e)}")
 ```
 
@@ -535,6 +1145,7 @@ logger.error(f"Gemini API error: {str(e)}")
 | File Uploads | Only accept `.pdf` files, validate MIME type |
 | SQL Injection | Use parameterized queries |
 | XSS | React escapes by default |
+| Duplicate Detection | Check email before adding to pool |
 
 **Note:** No authentication for MVP (single-user demo). Add auth if deploying publicly.
 
@@ -545,9 +1156,11 @@ logger.error(f"Gemini API error: {str(e)}")
 | Concern | Approach |
 |---------|----------|
 | Large file uploads | Client-side file size validation (max 10MB per file) |
-| Many resumes | Batch processing (10-15 per Gemini API call) |
-| Slow AI analysis | Progress indicator, batch status updates |
+| Many resumes | Batch processing in Phase 1 (10-15 per Gemini call) |
+| Large candidate pools | Tiered summarization for 100+ candidates |
+| Slow AI analysis | Two-phase progress indicator, batch status updates |
 | Database queries | SQLite is fast enough for single-user |
+| Token limits | Compress older candidates if pool > 50 |
 
 ---
 
@@ -613,8 +1226,21 @@ FLASK_ENV=development
 **Decision:** Skip user authentication for MVP.
 **Rationale:** Single-user demo application. Adding auth would increase complexity without benefit for college evaluation.
 
+### ADR-007: Two-Phase Analysis Architecture
+**Decision:** Split analysis into Phase 1 (individual extraction) and Phase 2 (comparative ranking).
+**Rationale:** Enables role-based candidate pools, comparative ranking, and better token management. Local extraction reduces API costs.
+
+### ADR-008: Role-Based Candidate Pools
+**Decision:** Persist candidates per role across sessions for comparative analysis.
+**Rationale:** Enables fair comparison against historical candidates, detects AI-polished resumes, provides pool-relative scoring. Better hiring decisions through context.
+
+### ADR-009: Local Extraction + Gemini Intelligence
+**Decision:** Use regex/spaCy for basic extraction, Gemini only for understanding.
+**Rationale:** Reduces API costs, faster processing, API used only where true intelligence is needed. Satisfies requirement to minimize API usage.
+
 ---
 
-_Generated by BMAD Decision Architecture Workflow v1.0_
-_Date: 2025-11-30_
+_Generated by BMAD Decision Architecture Workflow v2.0_
+_Date: 2025-12-04_
 _For: Uzasch_
+_Client: Yoboho Company HR Department_
