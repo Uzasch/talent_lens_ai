@@ -83,7 +83,7 @@ workflow_status:
   - id: "test-design"
     phase: 2
     name: "Test Design"
-    status: "recommended"
+    status: "docs/test-design-system.md"
     agent: "tea"
     command: "*test-design"
 
@@ -97,7 +97,7 @@ workflow_status:
   - id: "implementation-readiness"
     phase: 2
     name: "Implementation Readiness"
-    status: "required"
+    status: "docs/implementation-readiness-report-2025-12-20.md"
     agent: "architect"
     command: "*implementation-readiness"
 
@@ -105,6 +105,20 @@ workflow_status:
   - id: "sprint-planning"
     phase: 3
     name: "Sprint Planning"
-    status: "required"
+    status: "docs/sprint-artifacts/sprint-status.yaml"
     agent: "sm"
     command: "*sprint-planning"
+
+  - id: "epic-tech-context"
+    phase: 3
+    name: "Epic Tech Context"
+    status: "docs/sprint-artifacts/tech-spec-epic-1.md"
+    agent: "sm"
+    command: "*create-epic-tech-context"
+
+  - id: "create-story"
+    phase: 3
+    name: "Create Story"
+    status: "docs/sprint-artifacts/"
+    agent: "sm"
+    command: "*create-story"
