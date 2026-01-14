@@ -18,7 +18,7 @@ else:
     genai.configure(api_key=API_KEY)
 
 # Model configuration
-MODEL_NAME = 'models/gemini-flash-lite-latest'
+MODEL_NAME = 'models/gemini-2.5-flash'
 
 # Extraction prompt template
 EXTRACTION_PROMPT = """Extract structured data from this resume text.

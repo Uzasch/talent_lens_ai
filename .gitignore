@@ -21,11 +21,14 @@ build/
 # IDE
 .vscode/
 .idea/
-
+.test-data/
 # OS
 .DS_Store
 Thumbs.db
 
 # Logs
 *.log
-Uzair_Cheulkar_MIS_Resume.pdf
+
+# Resumes
+*.pdf
+test-data/

@@ -506,12 +506,16 @@ def rank_candidates_comparatively(
         )
 
         response = model.generate_content(prompt)
+        logger.info(f"Gemini ranking response (first 1000 chars): {response.text[:1000]}")
         data = parse_gemini_response(response.text)
+        logger.info(f"Parsed rankings data keys: {data.keys() if data else 'None'}")
+        logger.info(f"Number of rankings in response: {len(data.get('rankings', []))}")
 
         rankings = data.get('rankings', [])
 
         # Validate rankings
         rankings = validate_rankings(rankings, candidates)
+        logger.info(f"After validation: {len(rankings)} rankings remain")
 
         # Recalculate match scores with our weights
         for r in rankings:

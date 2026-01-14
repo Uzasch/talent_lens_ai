@@ -10,9 +10,9 @@ function App() {
   return (
     <ThemeProvider defaultTheme="dark">
       <BrowserRouter>
-        <div className="min-h-screen bg-background text-foreground">
+        <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
           <Navbar />
-          <main className="container mx-auto px-4 py-8">
+          <main className="container mx-auto px-4 pt-24 pb-8">
             <Routes>
               <Route path="/" element={<HomePage />} />
               <Route path="/dashboard/:sessionId" element={<DashboardPage />} />

@@ -66,48 +66,71 @@
     @apply border-border;
   }
 
-  body {
+  html, body {
     @apply bg-background text-foreground;
     margin: 0;
     min-height: 100vh;
     font-family: system-ui, -apple-system, sans-serif;
-    font-size: 16px;
+    font-size: 18px;
+    overflow-x: hidden;
+    max-width: 100vw;
   }
 
   #root {
     min-height: 100vh;
+    overflow-x: hidden;
   }
 
   /* Headings - bolder and bigger */
   h1 {
-    @apply text-4xl font-black tracking-tight;
+    @apply text-5xl font-black tracking-tight;
   }
 
   h2 {
-    @apply text-2xl font-extrabold tracking-tight;
+    @apply text-3xl font-extrabold tracking-tight;
   }
 
   h3 {
-    @apply text-xl font-bold;
+    @apply text-2xl font-bold;
   }
 
   h4 {
-    @apply text-lg font-bold;
+    @apply text-xl font-bold;
   }
 
   /* Labels and form text */
   label {
-    @apply text-lg font-bold;
+    @apply text-xl font-bold;
   }
 
   /* Paragraphs */
   p {
-    @apply text-base leading-relaxed;
+    @apply text-lg leading-relaxed;
   }
 
   /* Buttons text */
   button {
-    @apply font-semibold;
+    @apply font-semibold text-base;
+  }
+
+  /* Larger text for inputs and textareas */
+  input, textarea, select {
+    @apply text-lg;
+  }
+
+  /* List items */
+  li {
+    @apply text-lg;
+  }
+
+  /* Table cells */
+  td, th {
+    @apply text-base;
+  }
+
+  /* Small text still readable */
+  small {
+    @apply text-base;
   }
 }
 
