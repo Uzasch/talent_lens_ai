@@ -10,12 +10,6 @@ TalentLens AI is an AI-powered resume shortlisting tool that helps HR profession
 
 ---
 
-## Client
-
-**Yoboho Company** — HR Department
-
----
-
 ## Problem Statement
 
 HR professionals face decision fatigue after reviewing 50+ resumes. Current tools only do keyword matching — they can't distinguish between two candidates who both list "React" when one built production apps for 10K users and the other completed a tutorial. Worse, they can't explain their rankings, leaving HR to justify choices on gut feeling.
@@ -161,16 +155,10 @@ GMAIL_APP_PASSWORD=your_app_password
 
 ---
 
-## Author
+## Contributor
 
-**Uzasch**
+**Ayesha Cheulkar**
 
----
 
-## License
-
-This project is developed for Yoboho Company HR Department.
-
----
 
 *Built with AI-powered transparency — because hiring decisions deserve explanations.*
