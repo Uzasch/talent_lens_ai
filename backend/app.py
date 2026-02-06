@@ -16,11 +16,23 @@ from services.email_service import EmailService
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO)
+# Setup logging to both console and file
+os.makedirs('logs', exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('logs/app.log'),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app, origins=['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175'], supports_credentials=True)
+
+# Allow large file uploads (500MB for many resumes)
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 
 # Initialize database on startup
 init_db()

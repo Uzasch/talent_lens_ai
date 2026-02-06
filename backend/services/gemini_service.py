@@ -20,6 +20,11 @@ else:
 # Model configuration
 MODEL_NAME = 'models/gemini-2.5-flash'
 
+# Retry configuration
+MAX_RETRIES = 5
+INITIAL_RETRY_DELAY = 15  # seconds
+REQUEST_DELAY = 4  # seconds between API calls to stay under rate limits
+
 # Extraction prompt template
 EXTRACTION_PROMPT = """Extract structured data from this resume text.
 
@@ -145,35 +150,53 @@ def extract_structured_data(resume_text: str) -> dict:
         default_response["extraction_error"] = "GEMINI_API_KEY not configured"
         return default_response
 
-    try:
-        # Truncate very long resumes to avoid token limits
-        max_chars = 10000
-        if len(resume_text) > max_chars:
-            resume_text = resume_text[:max_chars]
-            logger.info(f"Resume text truncated to {max_chars} chars")
+    # Truncate very long resumes to avoid token limits
+    max_chars = 10000
+    if len(resume_text) > max_chars:
+        resume_text = resume_text[:max_chars]
+        logger.info(f"Resume text truncated to {max_chars} chars")
 
-        # Create model and generate
-        model = genai.GenerativeModel(MODEL_NAME)
-        prompt = EXTRACTION_PROMPT.format(resume_text=resume_text)
+    # Retry logic with exponential backoff for rate limits
+    for attempt in range(MAX_RETRIES):
+        try:
+            # Add delay before API call to stay under rate limits
+            time.sleep(REQUEST_DELAY)
 
-        response = model.generate_content(prompt)
+            # Create model and generate
+            model = genai.GenerativeModel(MODEL_NAME)
+            prompt = EXTRACTION_PROMPT.format(resume_text=resume_text)
 
-        # Parse response
-        response_text = response.text.strip()
-        data = parse_gemini_response(response_text)
+            response = model.generate_content(prompt)
 
-        # Merge with defaults for missing fields
-        for key in default_response:
-            if key not in data and key != "extraction_error":
-                data[key] = default_response[key]
+            # Parse response
+            response_text = response.text.strip()
+            data = parse_gemini_response(response_text)
 
-        logger.info("Gemini extraction successful")
-        return data
+            # Merge with defaults for missing fields
+            for key in default_response:
+                if key not in data and key != "extraction_error":
+                    data[key] = default_response[key]
 
-    except Exception as e:
-        logger.error(f"Gemini API error: {e}")
-        default_response["extraction_error"] = str(e)
-        return default_response
+            logger.info("Gemini extraction successful")
+            return data
+
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str or "quota" in error_str.lower():
+                # Rate limit - wait and retry
+                delay = INITIAL_RETRY_DELAY * (2 ** attempt)
+                logger.warning(f"Rate limit hit, retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                time.sleep(delay)
+            else:
+                # Other error - don't retry
+                logger.error(f"Gemini API error: {e}")
+                default_response["extraction_error"] = error_str
+                return default_response
+
+    # All retries exhausted
+    logger.error("All retry attempts exhausted for Gemini extraction")
+    default_response["extraction_error"] = "Rate limit exceeded after retries"
+    return default_response
 
 
 def extract_with_retry(resume_text: str, max_retries: int = 2) -> dict:
@@ -357,6 +380,9 @@ def detect_job_priorities(job_description: str) -> dict:
         return default_response
 
     try:
+        # Add delay before API call to stay under rate limits
+        time.sleep(REQUEST_DELAY)
+
         model = genai.GenerativeModel(MODEL_NAME)
         prompt = PRIORITY_DETECTION_PROMPT.format(job_description=job_description)
 

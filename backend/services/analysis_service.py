@@ -2,6 +2,7 @@
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from models import (
     create_or_get_role,
     create_session,
@@ -210,17 +211,38 @@ def run_full_analysis(
     session_id = create_session(role_id, job_description, 0, 0)
     logger.info(f"Session: {session_id}")
 
-    # Step 3: Phase 1 - Extract data from PDFs
-    logger.info(f"Phase 1: Extracting {len(files)} resumes")
+    # Step 3: Phase 1 - Extract data from PDFs (concurrent processing)
+    logger.info(f"Phase 1: Extracting {len(files)} resumes with concurrent processing")
     new_candidates = []
     extraction_errors = []
 
-    for file in files:
-        candidate = process_single_resume(file, role_id, session_id)
-        if candidate:
-            new_candidates.append(candidate)
-        else:
-            extraction_errors.append(file.filename)
+    # Use ThreadPoolExecutor for concurrent PDF processing
+    # Limit to 1 worker to stay within Gemini free tier rate limits
+    max_workers = 1
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all files for processing
+        future_to_file = {
+            executor.submit(process_single_resume, file, role_id, session_id): file
+            for file in files
+        }
+
+        # Collect results as they complete
+        for i, future in enumerate(as_completed(future_to_file)):
+            file = future_to_file[future]
+            try:
+                candidate = future.result()
+                if candidate:
+                    new_candidates.append(candidate)
+                else:
+                    extraction_errors.append(file.filename)
+            except Exception as e:
+                logger.error(f"Error processing {file.filename}: {e}")
+                extraction_errors.append(file.filename)
+
+            # Log progress every 10 resumes
+            if (i + 1) % 10 == 0:
+                logger.info(f"Progress: {i + 1}/{len(files)} resumes processed")
 
     logger.info(f"Phase 1 complete: {len(new_candidates)} candidates extracted")
     if extraction_errors:

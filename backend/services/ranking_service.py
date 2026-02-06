@@ -2,8 +2,9 @@
 
 import json
 import logging
+import time
 import google.generativeai as genai
-from services.gemini_service import parse_gemini_response, MODEL_NAME
+from services.gemini_service import parse_gemini_response, MODEL_NAME, MAX_RETRIES, INITIAL_RETRY_DELAY, REQUEST_DELAY
 from services.pool_manager import format_pool_for_gemini
 
 logger = logging.getLogger(__name__)
@@ -108,6 +109,9 @@ def score_candidates_for_thresholds(job_description: str, candidates: list) -> d
         return {}
 
     try:
+        # Add delay before API call to stay under rate limits
+        time.sleep(REQUEST_DELAY)
+
         model = genai.GenerativeModel(MODEL_NAME)
 
         # Format candidates
@@ -486,88 +490,141 @@ def rank_candidates_comparatively(
     # Validate weights
     validated_weights = validate_weights(weights)
 
-    try:
-        model = genai.GenerativeModel(MODEL_NAME)
+    # Process in batches if too many candidates (Gemini can't handle 80+ at once)
+    BATCH_SIZE = 20
+    if len(candidates) > BATCH_SIZE:
+        logger.info(f"Processing {len(candidates)} candidates in batches of {BATCH_SIZE}")
+        all_rankings = []
 
-        # Format inputs
-        candidates_text = format_pool_for_gemini(candidates)
-        priorities_text = json.dumps(priorities, indent=2) if priorities else "{}"
+        for i in range(0, len(candidates), BATCH_SIZE):
+            batch = candidates[i:i + BATCH_SIZE]
+            logger.info(f"Ranking batch {i // BATCH_SIZE + 1}: {len(batch)} candidates")
+            batch_rankings = _rank_single_batch(
+                job_description, batch, validated_weights, priorities
+            )
+            all_rankings.extend(batch_rankings)
 
-        prompt = RANKING_PROMPT.format(
-            job_description=job_description,
-            priorities=priorities_text,
-            exp_weight=validated_weights.get('experience', 20),
-            skills_weight=validated_weights.get('skills', 20),
-            projects_weight=validated_weights.get('projects', 20),
-            positions_weight=validated_weights.get('positions', 20),
-            edu_weight=validated_weights.get('education', 20),
-            count=len(candidates),
-            candidates=candidates_text
-        )
-
-        response = model.generate_content(prompt)
-        logger.info(f"Gemini ranking response (first 1000 chars): {response.text[:1000]}")
-        data = parse_gemini_response(response.text)
-        logger.info(f"Parsed rankings data keys: {data.keys() if data else 'None'}")
-        logger.info(f"Number of rankings in response: {len(data.get('rankings', []))}")
-
-        rankings = data.get('rankings', [])
-
-        # Validate rankings
-        rankings = validate_rankings(rankings, candidates)
-        logger.info(f"After validation: {len(rankings)} rankings remain")
-
-        # Recalculate match scores with our weights
-        for r in rankings:
-            r['match_score'] = calculate_match_score(r['scores'], validated_weights)
-
-        # Sort by match score
-        rankings.sort(key=lambda x: x.get('match_score', 0), reverse=True)
-
-        # Assign final ranks
-        for i, r in enumerate(rankings):
+        # Re-sort all rankings by match_score and assign final ranks
+        all_rankings.sort(key=lambda x: x.get('match_score', 0), reverse=True)
+        for i, r in enumerate(all_rankings):
             r['rank'] = i + 1
 
-        # Handle missing candidates (Gemini might skip some)
-        ranked_ids = {r['candidate_id'] for r in rankings}
-        for candidate in candidates:
-            if candidate['id'] not in ranked_ids:
-                logger.warning(f"Candidate {candidate['id']} missing from rankings, adding with default scores")
-                default_scores = {dim: 50 for dim in DIMENSIONS}
-                rankings.append({
-                    'candidate_id': candidate['id'],
-                    'rank': len(rankings) + 1,
-                    'match_score': calculate_match_score(default_scores, validated_weights),
-                    'scores': default_scores,
-                    'summary': generate_summary_fallback(candidate, default_scores),
-                    'why_selected': 'Unable to fully evaluate',
-                    'compared_to_pool': ''
-                })
+        logger.info(f"Ranked {len(all_rankings)} candidates across batches")
+        return all_rankings
 
-        # Re-sort and re-rank after adding missing
-        rankings.sort(key=lambda x: x.get('match_score', 0), reverse=True)
-        for i, r in enumerate(rankings):
-            r['rank'] = i + 1
+    return _rank_single_batch(job_description, candidates, validated_weights, priorities)
 
-        logger.info(f"Ranked {len(rankings)} candidates")
-        return rankings
 
-    except Exception as e:
-        logger.error(f"Ranking error: {e}")
-        # Return basic rankings as fallback
-        fallback = []
-        for i, candidate in enumerate(candidates):
-            default_scores = {dim: 50 for dim in DIMENSIONS}
-            fallback.append({
-                'candidate_id': candidate['id'],
-                'rank': i + 1,
-                'match_score': 50,
-                'scores': default_scores,
-                'summary': generate_summary_fallback(candidate, default_scores),
-                'why_selected': 'Ranking unavailable due to error',
-                'compared_to_pool': ''
-            })
-        return fallback
+def _rank_single_batch(
+    job_description: str,
+    candidates: list,
+    validated_weights: dict,
+    priorities: dict
+) -> list:
+    """Rank a single batch of candidates."""
+    if not candidates:
+        return []
+
+    model = genai.GenerativeModel(MODEL_NAME)
+
+    # Format inputs
+    candidates_text = format_pool_for_gemini(candidates)
+    priorities_text = json.dumps(priorities, indent=2) if priorities else "{}"
+
+    prompt = RANKING_PROMPT.format(
+        job_description=job_description,
+        priorities=priorities_text,
+        exp_weight=validated_weights.get('experience', 20),
+        skills_weight=validated_weights.get('skills', 20),
+        projects_weight=validated_weights.get('projects', 20),
+        positions_weight=validated_weights.get('positions', 20),
+        edu_weight=validated_weights.get('education', 20),
+        count=len(candidates),
+        candidates=candidates_text
+    )
+
+    # Retry logic for rate limits
+    last_error = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            # Add delay before API call to stay under rate limits
+            time.sleep(REQUEST_DELAY)
+
+            response = model.generate_content(prompt)
+            logger.info(f"Gemini ranking response (first 1000 chars): {response.text[:1000]}")
+            data = parse_gemini_response(response.text)
+            logger.info(f"Parsed rankings data keys: {data.keys() if data else 'None'}")
+            logger.info(f"Number of rankings in response: {len(data.get('rankings', []))}")
+
+            rankings = data.get('rankings', [])
+
+            # Validate rankings
+            rankings = validate_rankings(rankings, candidates)
+            logger.info(f"After validation: {len(rankings)} rankings remain")
+
+            # Recalculate match scores with our weights
+            for r in rankings:
+                r['match_score'] = calculate_match_score(r['scores'], validated_weights)
+
+            # Sort by match score
+            rankings.sort(key=lambda x: x.get('match_score', 0), reverse=True)
+
+            # Assign final ranks
+            for i, r in enumerate(rankings):
+                r['rank'] = i + 1
+
+            # Handle missing candidates (Gemini might skip some)
+            ranked_ids = {r['candidate_id'] for r in rankings}
+            for candidate in candidates:
+                if candidate['id'] not in ranked_ids:
+                    logger.warning(f"Candidate {candidate['id']} missing from rankings, adding with default scores")
+                    default_scores = {dim: 50 for dim in DIMENSIONS}
+                    rankings.append({
+                        'candidate_id': candidate['id'],
+                        'rank': len(rankings) + 1,
+                        'match_score': calculate_match_score(default_scores, validated_weights),
+                        'scores': default_scores,
+                        'summary': generate_summary_fallback(candidate, default_scores),
+                        'why_selected': 'Unable to fully evaluate',
+                        'compared_to_pool': ''
+                    })
+
+            # Re-sort and re-rank after adding missing
+            rankings.sort(key=lambda x: x.get('match_score', 0), reverse=True)
+            for i, r in enumerate(rankings):
+                r['rank'] = i + 1
+
+            logger.info(f"Ranked {len(rankings)} candidates")
+            return rankings
+
+        except Exception as e:
+            error_str = str(e)
+            last_error = e
+            if "429" in error_str or "quota" in error_str.lower():
+                # Rate limit - wait and retry
+                delay = INITIAL_RETRY_DELAY * (2 ** attempt)
+                logger.warning(f"Ranking rate limit hit, retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                time.sleep(delay)
+            else:
+                # Other error - break out of retry loop
+                logger.error(f"Ranking error: {e}")
+                break
+
+    # All retries exhausted or non-retryable error
+    logger.error(f"Ranking failed after retries: {last_error}")
+    fallback = []
+    for i, candidate in enumerate(candidates):
+        default_scores = {dim: 50 for dim in DIMENSIONS}
+        fallback.append({
+            'candidate_id': candidate['id'],
+            'rank': i + 1,
+            'match_score': 50,
+            'scores': default_scores,
+            'summary': generate_summary_fallback(candidate, default_scores),
+            'why_selected': 'Ranking unavailable due to error',
+            'compared_to_pool': ''
+        })
+    return fallback
 
 
 # ============================================================================
